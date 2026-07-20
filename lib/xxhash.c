@@ -236,6 +236,7 @@ static vuint32m1_t XXH_rotx_u32m1(vuint32m1_t v, int amount, size_t vl) {
     return XXH_RVV_VOR_VV_U32M1(v_sll, v_srl, vl);
 }
 
+static vuint64m1_t XXH_rotx_u64m1(vuint64m1_t v, int amount, size_t vl) __attribute__((unused));
 static vuint64m1_t XXH_rotx_u64m1(vuint64m1_t v, int amount, size_t vl) {
     /* rotl(x, n) = (x << n) | (x >> (64-n)) */
     vuint64m1_t v_sll = XXH_RVV_VSLL_VX_U64M1(v, amount, vl);
@@ -514,30 +515,32 @@ XXH32_endian_align(const void* input, size_t len, U32 seed,
     if (len>=16) {
 #if XXH_ENABLE_RVV
         /* RISC-V RVV vectorized path: process 4 accumulators in parallel */
+        typedef struct { U32 v[4] __attribute__((aligned(16))); } aligned_u32x4_t;
+        typedef struct { U32 v[4] __attribute__((aligned(16))); } aligned_acc_t;
         const BYTE* const limit = bEnd - 15;
         size_t vl = XXH_RVV_VSETVL_E32M1(4);
+        aligned_u32x4_t init_aligned;
+        aligned_acc_t acc_aligned;
+        vuint32m1_t v_acc;
 
         /* Initialize vector accumulators [v1, v2, v3, v4] using aligned array */
-        typedef struct { U32 v[4] __attribute__((aligned(16))); } aligned_u32x4_t;
-        aligned_u32x4_t init_aligned;
         init_aligned.v[0] = seed + PRIME32_1 + PRIME32_2;
         init_aligned.v[1] = seed + PRIME32_2;
         init_aligned.v[2] = seed + 0;
         init_aligned.v[3] = seed - PRIME32_1;
-        vuint32m1_t v_acc = XXH_RVV_VLE32_V_U32M1(init_aligned.v, vl);
-
-        vuint32m1_t v_prime2 = XXH_RVV_VMV_V_X_U32M1(PRIME32_2, vl);
-        vuint32m1_t v_prime1 = XXH_RVV_VMV_V_X_U32M1(PRIME32_1, vl);
+        v_acc = XXH_RVV_VLE32_V_U32M1(init_aligned.v, vl);
 
         do {
+            vuint32m1_t v_input;
+            vuint32m1_t v_mult;
             /* Load 16 bytes directly from source (RVV element loads are unaligned-safe).
              * Avoids the scalar gather + stack store + vector reload of the prior path. */
-            vuint32m1_t v_input = XXH_RVV_LOAD_U32X4(p);
+            v_input = XXH_RVV_LOAD_U32X4(p);
             if (endian != XXH_littleEndian)
                 v_input = XXH_rvswap_u32m1(v_input, vl);
 
             /* v_acc += v_input * PRIME32_2 */
-            vuint32m1_t v_mult = XXH_RVV_VMUL_VX_U32M1(v_input, PRIME32_2, vl);
+            v_mult = XXH_RVV_VMUL_VX_U32M1(v_input, PRIME32_2, vl);
             v_acc = XXH_RVV_VADD_VV_U32M1(v_acc, v_mult, vl);
 
             /* v_acc = rotl13(v_acc) */
@@ -550,8 +553,6 @@ XXH32_endian_align(const void* input, size_t len, U32 seed,
         } while (p < limit);
 
         /* Store results back to scalar array */
-        typedef struct { U32 v[4] __attribute__((aligned(16))); } aligned_acc_t;
-        aligned_acc_t acc_aligned;
         XXH_RVV_VSE32_V_U32M1(acc_aligned.v, v_acc, vl);
 
         /* Merge accumulators (same as scalar) */
@@ -691,18 +692,21 @@ XXH32_update_endian(XXH32_state_t* state, const void* input, size_t len, XXH_end
              * XXH32_endian_align loop; only the streaming path actually feeds
              * the LZ4 content checksum, so this is where the win matters. */
             {
-                size_t vl = XXH_RVV_VSETVL_E32M1(4);
                 typedef struct { U32 v[4] __attribute__((aligned(16))); } aligned_u32x4_t;
+                size_t vl = XXH_RVV_VSETVL_E32M1(4);
                 aligned_u32x4_t acc_aligned;
+                vuint32m1_t v_acc;
                 acc_aligned.v[0] = v1; acc_aligned.v[1] = v2;
                 acc_aligned.v[2] = v3; acc_aligned.v[3] = v4;
-                vuint32m1_t v_acc = XXH_RVV_VLE32_V_U32M1(acc_aligned.v, vl);
+                v_acc = XXH_RVV_VLE32_V_U32M1(acc_aligned.v, vl);
 
                 do {
-                    vuint32m1_t v_input = XXH_RVV_LOAD_U32X4(p);
+                    vuint32m1_t v_input;
+                    vuint32m1_t v_mult;
+                    v_input = XXH_RVV_LOAD_U32X4(p);
                     if (endian != XXH_littleEndian)
                         v_input = XXH_rvswap_u32m1(v_input, vl);
-                    vuint32m1_t v_mult = XXH_RVV_VMUL_VX_U32M1(v_input, PRIME32_2, vl);
+                    v_mult = XXH_RVV_VMUL_VX_U32M1(v_input, PRIME32_2, vl);
                     v_acc = XXH_RVV_VADD_VV_U32M1(v_acc, v_mult, vl);
                     v_acc = XXH_ROTL32(v_acc, 13, vl);
                     v_acc = XXH_RVV_VMUL_VX_U32M1(v_acc, PRIME32_1, vl);
@@ -1053,26 +1057,31 @@ XXH64_endian_align(const void* input, size_t len, U64 seed,
         /* RISC-V RVV vectorized path: process 4 accumulators in parallel.
          * Use LMUL=2 so a full 4-lane vector fits even on a 128-bit VLEN
          * (where e64m1 yields only 2 lanes). vsetvl_e64m2(4) returns 4. */
+        typedef struct { U64 v[4] __attribute__((aligned(32))); } aligned_u64x4_t;
+        typedef struct { U64 v[4] __attribute__((aligned(32))); } aligned_acc64_t;
         const BYTE* const limit = bEnd - 32;
         size_t vl = __riscv_vsetvl_e64m2(4);
+        aligned_u64x4_t init_aligned;
+        aligned_acc64_t acc_aligned;
+        vuint64m2_t v_acc;
 
         /* Initialize vector accumulators [v1, v2, v3, v4] using aligned array */
-        typedef struct { U64 v[4] __attribute__((aligned(32))); } aligned_u64x4_t;
-        aligned_u64x4_t init_aligned;
         init_aligned.v[0] = seed + PRIME64_1 + PRIME64_2;
         init_aligned.v[1] = seed + PRIME64_2;
         init_aligned.v[2] = seed + 0;
         init_aligned.v[3] = seed - PRIME64_1;
-        vuint64m2_t v_acc = XXH_RVV_VLE64_V_U64M2(init_aligned.v, vl);
+        v_acc = XXH_RVV_VLE64_V_U64M2(init_aligned.v, vl);
 
         do {
+            vuint64m2_t v_input;
+            vuint64m2_t v_mult;
             /* Load 32 bytes as bytes (unaligned-safe) and reinterpret to u64m2. */
-            vuint64m2_t v_input = XXH_RVV_LOAD_U64X4(p);
+            v_input = XXH_RVV_LOAD_U64X4(p);
             if (endian != XXH_littleEndian)
                 v_input = XXH_rvswap_u64m2(v_input, vl);
 
             /* v_acc += v_input * PRIME64_2 */
-            vuint64m2_t v_mult = XXH_RVV_VMUL_VX_U64M2(v_input, PRIME64_2, vl);
+            v_mult = XXH_RVV_VMUL_VX_U64M2(v_input, PRIME64_2, vl);
             v_acc = XXH_RVV_VADD_VV_U64M2(v_acc, v_mult, vl);
 
             /* v_acc = rotl31(v_acc) */
@@ -1085,8 +1094,6 @@ XXH64_endian_align(const void* input, size_t len, U64 seed,
         } while (p<=limit);
 
         /* Store results back to scalar array */
-        typedef struct { U64 v[4] __attribute__((aligned(32))); } aligned_acc64_t;
-        aligned_acc64_t acc_aligned;
         XXH_RVV_VSE64_V_U64M2(acc_aligned.v, v_acc, vl);
 
         /* Merge accumulators (same as scalar) */
