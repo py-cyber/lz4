@@ -160,34 +160,36 @@ static void* XXH_memcpy(void* dest, const void* src, size_t size) { return memcp
 #if XXH_ENABLE_RVV
 #include <riscv_vector.h>
 
-/* Compiler compatibility macros for RVV intrinsics */
-#if defined(__GNUC__) && !defined(__clang__)
-  /* GCC 13+ style - typed intrinsics (vl parameter not needed) */
-  #define XXH_RVV_VSETVL_E32M1(n)  vsetvl_e32m1(n)
-  #define XXH_RVV_VSETVL_E64M1(n)  vsetvl_e64m1(n)
-  #define XXH_RVV_VLE32_V_U32M1(p,vl)  vle32_v_u32m1(p)
-  #define XXH_RVV_VLE64_V_U64M1(p,vl)  vle64_v_u64m1(p)
-  #define XXH_RVV_VSE32_V_U32M1(p,v,vl) vse32_v_u32m1(p, v)
-  #define XXH_RVV_VSE64_V_U64M1(p,v,vl) vse64_v_u64m1(p, v)
-  #define XXH_RVV_VMUL_VX_U32M1(v,x,vl) vmul_vx_u32m1(v, x)
-  #define XXH_RVV_VMUL_VX_U64M1(v,x,vl) vmul_vx_u64m1(v, x)
-  #define XXH_RVV_VADD_VV_U32M1(v1,v2,vl) vadd_vv_u32m1(v1, v2)
-  #define XXH_RVV_VADD_VV_U64M1(v1,v2,vl) vadd_vv_u64m1(v1, v2)
-  #define XXH_RVV_VSLL_VX_U32M1(v,s,vl) vsll_vx_u32m1(v, s)
-  #define XXH_RVV_VSLL_VX_U64M1(v,s,vl) vsll_vx_u64m1(v, s)
-  #define XXH_RVV_VSRL_VX_U32M1(v,s,vl) vsrl_vx_u32m1(v, s)
-  #define XXH_RVV_VSRL_VX_U64M1(v,s,vl) vsrl_vx_u64m1(v, s)
-  #define XXH_RVV_VOR_VV_U32M1(v1,v2,vl) vor_vv_u32m1(v1, v2)
-  #define XXH_RVV_VOR_VV_U64M1(v1,v2,vl) vor_vv_u64m1(v1, v2)
-  #define XXH_RVV_VMV_V_X_U32M1(x,vl) vmv_v_x_u32m1(x)
-  #define XXH_RVV_VMV_V_X_U64M1(x,vl) vmv_v_x_u64m1(x)
-  #define XXH_RVV_HAS_ROR 1
-#elif defined(__clang__)
-  /* Clang style - __riscv_ prefix with vl parameter */
+/* Compiler compatibility macros for RVV intrinsics.
+ * The __riscv_-prefixed intrinsics with an explicit vl parameter are the
+ * standard form supported by both GCC (>=13) and Clang (>=16). Use them
+ * uniformly for all compilers rather than relying on compiler-specific
+ * macro names. */
+#if defined(__GNUC__) || defined(__clang__)
   #define XXH_RVV_VSETVL_E32M1(n)  __riscv_vsetvl_e32m1(n)
   #define XXH_RVV_VSETVL_E64M1(n)  __riscv_vsetvl_e64m1(n)
+  /* Alignment-safe vector loads.
+   * RVV element loads (vle32/vle64) require natural alignment (4/8 bytes) and
+   * raise SIGBUS on misaligned pointers on real hardware (e.g. SpacemiT K1),
+   * though qemu user-mode does not trap them. To stay correct for arbitrary
+   * (unaligned) input we load as bytes (always safe) and reinterpret to the
+   * wider element type. For LE this yields the correct lane words; the
+   * per-lane byte-swap helpers handle big-endian. */
+  #define XXH_RVV_VLE8_V_U8M1(p,n)    __riscv_vle8_v_u8m1(p, n)
+  #define XXH_RVV_VLE8_V_U8M2(p,n)    __riscv_vle8_v_u8m2(p, n)
+  #define XXH_RVV_VREINT_U8M1_U32M1(v) __riscv_vreinterpret_v_u8m1_u32m1(v)
+  #define XXH_RVV_VREINT_U8M2_U64M2(v) __riscv_vreinterpret_v_u8m2_u64m2(v)
+  /* Load 16 bytes (4xU32) as bytes and reinterpret to u32m1. */
+  #define XXH_RVV_LOAD_U32X4(p) \
+      XXH_RVV_VREINT_U8M1_U32M1(XXH_RVV_VLE8_V_U8M1((const BYTE*)(p), 16))
+  /* Load 32 bytes (4xU64) as bytes and reinterpret to u64m2. */
+  #define XXH_RVV_LOAD_U64X4(p) \
+      XXH_RVV_VREINT_U8M2_U64M2(XXH_RVV_VLE8_V_U8M2((const BYTE*)(p), 32))
+  /* Aligned element loads/stores for local accumulator arrays (safe: the
+   * arrays are declared __attribute__((aligned(...))). */
   #define XXH_RVV_VLE32_V_U32M1(p,vl)  __riscv_vle32_v_u32m1(p, vl)
-  #define XXH_RVV_VLE64_V_U64M1(p,vl)  __riscv_vle64_v_u64m1(p, vl)
+  #define XXH_RVV_VLE64_V_U64M2(p,vl)  __riscv_vle64_v_u64m2(p, vl)
+
   #define XXH_RVV_VSE32_V_U32M1(p,v,vl) __riscv_vse32_v_u32m1(p, v, vl)
   #define XXH_RVV_VSE64_V_U64M1(p,v,vl) __riscv_vse64_v_u64m1(p, v, vl)
   #define XXH_RVV_VMUL_VX_U32M1(v,x,vl) __riscv_vmul_vx_u32m1(v, x, vl)
@@ -196,13 +198,29 @@ static void* XXH_memcpy(void* dest, const void* src, size_t size) { return memcp
   #define XXH_RVV_VADD_VV_U64M1(v1,v2,vl) __riscv_vadd_vv_u64m1(v1, v2, vl)
   #define XXH_RVV_VSLL_VX_U32M1(v,s,vl) __riscv_vsll_vx_u32m1(v, s, vl)
   #define XXH_RVV_VSLL_VX_U64M1(v,s,vl) __riscv_vsll_vx_u64m1(v, s, vl)
+  #define XXH_RVV_VAND_VX_U32M1(v,s,vl) __riscv_vand_vx_u32m1(v, s, vl)
+  #define XXH_RVV_VAND_VX_U64M1(v,s,vl) __riscv_vand_vx_u64m1(v, s, vl)
   #define XXH_RVV_VSRL_VX_U32M1(v,s,vl) __riscv_vsrl_vx_u32m1(v, s, vl)
   #define XXH_RVV_VSRL_VX_U64M1(v,s,vl) __riscv_vsrl_vx_u64m1(v, s, vl)
   #define XXH_RVV_VOR_VV_U32M1(v1,v2,vl) __riscv_vor_vv_u32m1(v1, v2, vl)
   #define XXH_RVV_VOR_VV_U64M1(v1,v2,vl) __riscv_vor_vv_u64m1(v1, v2, vl)
   #define XXH_RVV_VMV_V_X_U32M1(x,vl) __riscv_vmv_v_x_u32m1(x, vl)
   #define XXH_RVV_VMV_V_X_U64M1(x,vl) __riscv_vmv_v_x_u64m1(x, vl)
-  #define XXH_RVV_HAS_ROR 0  /* Clang 17 lacks vror intrinsic */
+  /* LMUL=2 variants for the 64-bit path, so a full 4-lane vector of
+   * accumulators fits even on a 128-bit VLEN (where e64m1 yields only 2). */
+  #define XXH_RVV_VSE64_V_U64M2(p,v,vl) __riscv_vse64_v_u64m2(p, v, vl)
+  #define XXH_RVV_VLE64_V_U64M2(p,vl)  __riscv_vle64_v_u64m2(p, vl)
+  #define XXH_RVV_VMUL_VX_U64M2(v,x,vl) __riscv_vmul_vx_u64m2(v, x, vl)
+  #define XXH_RVV_VADD_VV_U64M2(v1,v2,vl) __riscv_vadd_vv_u64m2(v1, v2, vl)
+  #define XXH_RVV_VSLL_VX_U64M2(v,s,vl) __riscv_vsll_vx_u64m2(v, s, vl)
+  #define XXH_RVV_VSRL_VX_U64M2(v,s,vl) __riscv_vsrl_vx_u64m2(v, s, vl)
+  #define XXH_RVV_VAND_VX_U64M2(v,s,vl) __riscv_vand_vx_u64m2(v, s, vl)
+  #define XXH_RVV_VOR_VV_U64M2(v1,v2,vl) __riscv_vor_vv_u64m2(v1, v2, vl)
+  #define XXH_RVV_VMV_V_X_U64M2(x,vl) __riscv_vmv_v_x_u64m2(x, vl)
+  /* The vror (rotate-right) intrinsic is not consistently available across
+   * compiler versions, so we always use the portable shift-or helper
+   * (XXH_rotx_*) defined below for all compilers. */
+  #define XXH_RVV_HAS_ROR 0
 #else
   /* Unknown compiler - disable RVV */
   #undef XXH_ENABLE_RVV
@@ -224,11 +242,43 @@ static vuint64m1_t XXH_rotx_u64m1(vuint64m1_t v, int amount, size_t vl) {
     vuint64m1_t v_srl = XXH_RVV_VSRL_VX_U64M1(v, 64 - amount, vl);
     return XXH_RVV_VOR_VV_U64M1(v_sll, v_srl, vl);
 }
+static vuint64m2_t XXH_rotx_u64m2(vuint64m2_t v, int amount, size_t vl) {
+    /* rotl(x, n) = (x << n) | (x >> (64-n)) */
+    vuint64m2_t v_sll = XXH_RVV_VSLL_VX_U64M2(v, amount, vl);
+    vuint64m2_t v_srl = XXH_RVV_VSRL_VX_U64M2(v, 64 - amount, vl);
+    return XXH_RVV_VOR_VV_U64M2(v_sll, v_srl, vl);
+}
 #define XXH_ROTL32(v, n, vl) XXH_rotx_u32m1(v, n, vl)
 #define XXH_ROTL64(v, n, vl) XXH_rotx_u64m1(v, n, vl)
-#else
-#define XXH_ROTL32(v, n, vl) XXH_RVV_VROR_VI_U32M1(v, 32-(n), vl)
-#define XXH_ROTL64(v, n, vl) XXH_RVV_VROR_VI_U64M1(v, 64-(n), vl)
+#define XXH_ROTL64M2(v, n, vl) XXH_rotx_u64m2(v, n, vl)
+
+/* Byte-swap each vector lane (LE <-> BE). The scalar reference reads input
+ * with XXH_readLE*_align, which byte-swaps on big-endian. The RVV element
+ * loads below read native-endian words, so on big-endian we must swap each
+ * lane to stay bit-identical with the reference implementation. */
+static vuint32m1_t XXH_rvswap_u32m1(vuint32m1_t v, size_t vl) {
+    vuint32m1_t b0 = XXH_RVV_VSRL_VX_U32M1(v, 24, vl);
+    vuint32m1_t b1 = XXH_RVV_VAND_VX_U32M1(XXH_RVV_VSRL_VX_U32M1(v, 8, vl), 0xFF00, vl);
+    vuint32m1_t b2 = XXH_RVV_VAND_VX_U32M1(XXH_RVV_VSLL_VX_U32M1(v, 8, vl), 0xFF0000, vl);
+    vuint32m1_t b3 = XXH_RVV_VSLL_VX_U32M1(v, 24, vl);
+    return XXH_RVV_VOR_VV_U32M1(XXH_RVV_VOR_VV_U32M1(b0, b1, vl),
+                                 XXH_RVV_VOR_VV_U32M1(b2, b3, vl), vl);
+}
+static vuint64m2_t XXH_rvswap_u64m2(vuint64m2_t v, size_t vl) {
+    vuint64m2_t b0 = XXH_RVV_VSRL_VX_U64M2(v, 56, vl);
+    vuint64m2_t b1 = XXH_RVV_VAND_VX_U64M2(XXH_RVV_VSRL_VX_U64M2(v, 40, vl), 0xFF00ULL, vl);
+    vuint64m2_t b2 = XXH_RVV_VAND_VX_U64M2(XXH_RVV_VSRL_VX_U64M2(v, 24, vl), 0xFF0000ULL, vl);
+    vuint64m2_t b3 = XXH_RVV_VAND_VX_U64M2(XXH_RVV_VSRL_VX_U64M2(v, 8,  vl), 0xFF000000ULL, vl);
+    vuint64m2_t b4 = XXH_RVV_VAND_VX_U64M2(XXH_RVV_VSLL_VX_U64M2(v, 8,  vl), 0xFF00000000ULL, vl);
+    vuint64m2_t b5 = XXH_RVV_VAND_VX_U64M2(XXH_RVV_VSLL_VX_U64M2(v, 24, vl), 0xFF0000000000ULL, vl);
+    vuint64m2_t b6 = XXH_RVV_VAND_VX_U64M2(XXH_RVV_VSLL_VX_U64M2(v, 40, vl), 0xFF000000000000ULL, vl);
+    vuint64m2_t b7 = XXH_RVV_VSLL_VX_U64M2(v, 56, vl);
+    return XXH_RVV_VOR_VV_U64M2(
+        XXH_RVV_VOR_VV_U64M2(XXH_RVV_VOR_VV_U64M2(b0, b1, vl),
+                             XXH_RVV_VOR_VV_U64M2(b2, b3, vl), vl),
+        XXH_RVV_VOR_VV_U64M2(XXH_RVV_VOR_VV_U64M2(b4, b5, vl),
+                             XXH_RVV_VOR_VV_U64M2(b6, b7, vl), vl), vl);
+}
 #endif
 
 #endif /* XXH_ENABLE_RVV */
@@ -480,14 +530,11 @@ XXH32_endian_align(const void* input, size_t len, U32 seed,
         vuint32m1_t v_prime1 = XXH_RVV_VMV_V_X_U32M1(PRIME32_1, vl);
 
         do {
-            /* Load 16 bytes: 4 x 32-bit values using XXH_get32bits for alignment safety */
-            typedef struct { U32 v[4] __attribute__((aligned(16))); } aligned_input_t;
-            aligned_input_t in_aligned;
-            in_aligned.v[0] = XXH_get32bits(p + 0);
-            in_aligned.v[1] = XXH_get32bits(p + 4);
-            in_aligned.v[2] = XXH_get32bits(p + 8);
-            in_aligned.v[3] = XXH_get32bits(p + 12);
-            vuint32m1_t v_input = XXH_RVV_VLE32_V_U32M1(in_aligned.v, vl);
+            /* Load 16 bytes directly from source (RVV element loads are unaligned-safe).
+             * Avoids the scalar gather + stack store + vector reload of the prior path. */
+            vuint32m1_t v_input = XXH_RVV_LOAD_U32X4(p);
+            if (endian != XXH_littleEndian)
+                v_input = XXH_rvswap_u32m1(v_input, vl);
 
             /* v_acc += v_input * PRIME32_2 */
             vuint32m1_t v_mult = XXH_RVV_VMUL_VX_U32M1(v_input, PRIME32_2, vl);
@@ -638,12 +685,42 @@ XXH32_update_endian(XXH32_state_t* state, const void* input, size_t len, XXH_end
             U32 v3 = state->v3;
             U32 v4 = state->v4;
 
+#if XXH_ENABLE_RVV
+            /* RISC-V RVV vectorized path: process the 4 accumulators in
+             * parallel, one 16-byte block per iteration. Mirrors the one-shot
+             * XXH32_endian_align loop; only the streaming path actually feeds
+             * the LZ4 content checksum, so this is where the win matters. */
+            {
+                size_t vl = XXH_RVV_VSETVL_E32M1(4);
+                typedef struct { U32 v[4] __attribute__((aligned(16))); } aligned_u32x4_t;
+                aligned_u32x4_t acc_aligned;
+                acc_aligned.v[0] = v1; acc_aligned.v[1] = v2;
+                acc_aligned.v[2] = v3; acc_aligned.v[3] = v4;
+                vuint32m1_t v_acc = XXH_RVV_VLE32_V_U32M1(acc_aligned.v, vl);
+
+                do {
+                    vuint32m1_t v_input = XXH_RVV_LOAD_U32X4(p);
+                    if (endian != XXH_littleEndian)
+                        v_input = XXH_rvswap_u32m1(v_input, vl);
+                    vuint32m1_t v_mult = XXH_RVV_VMUL_VX_U32M1(v_input, PRIME32_2, vl);
+                    v_acc = XXH_RVV_VADD_VV_U32M1(v_acc, v_mult, vl);
+                    v_acc = XXH_ROTL32(v_acc, 13, vl);
+                    v_acc = XXH_RVV_VMUL_VX_U32M1(v_acc, PRIME32_1, vl);
+                    p += 16;
+                } while (p<=limit);
+
+                XXH_RVV_VSE32_V_U32M1(acc_aligned.v, v_acc, vl);
+                v1 = acc_aligned.v[0]; v2 = acc_aligned.v[1];
+                v3 = acc_aligned.v[2]; v4 = acc_aligned.v[3];
+            }
+#else
             do {
                 v1 = XXH32_round(v1, XXH_readLE32(p, endian)); p+=4;
                 v2 = XXH32_round(v2, XXH_readLE32(p, endian)); p+=4;
                 v3 = XXH32_round(v3, XXH_readLE32(p, endian)); p+=4;
                 v4 = XXH32_round(v4, XXH_readLE32(p, endian)); p+=4;
             } while (p<=limit);
+#endif
 
             state->v1 = v1;
             state->v2 = v2;
@@ -973,9 +1050,11 @@ XXH64_endian_align(const void* input, size_t len, U64 seed,
 
     if (len>=32) {
 #if XXH_ENABLE_RVV
-        /* RISC-V RVV vectorized path: process 4 accumulators in parallel */
+        /* RISC-V RVV vectorized path: process 4 accumulators in parallel.
+         * Use LMUL=2 so a full 4-lane vector fits even on a 128-bit VLEN
+         * (where e64m1 yields only 2 lanes). vsetvl_e64m2(4) returns 4. */
         const BYTE* const limit = bEnd - 32;
-        size_t vl = XXH_RVV_VSETVL_E64M1(4);
+        size_t vl = __riscv_vsetvl_e64m2(4);
 
         /* Initialize vector accumulators [v1, v2, v3, v4] using aligned array */
         typedef struct { U64 v[4] __attribute__((aligned(32))); } aligned_u64x4_t;
@@ -984,27 +1063,23 @@ XXH64_endian_align(const void* input, size_t len, U64 seed,
         init_aligned.v[1] = seed + PRIME64_2;
         init_aligned.v[2] = seed + 0;
         init_aligned.v[3] = seed - PRIME64_1;
-        vuint64m1_t v_acc = XXH_RVV_VLE64_V_U64M1(init_aligned.v, vl);
+        vuint64m2_t v_acc = XXH_RVV_VLE64_V_U64M2(init_aligned.v, vl);
 
         do {
-            /* Load 32 bytes: 4 x 64-bit values using XXH_get64bits for alignment safety */
-            typedef struct { U64 v[4] __attribute__((aligned(32))); } aligned_input64_t;
-            aligned_input64_t in_aligned;
-            in_aligned.v[0] = XXH_get64bits(p + 0);
-            in_aligned.v[1] = XXH_get64bits(p + 8);
-            in_aligned.v[2] = XXH_get64bits(p + 16);
-            in_aligned.v[3] = XXH_get64bits(p + 24);
-            vuint64m1_t v_input = XXH_RVV_VLE64_V_U64M1(in_aligned.v, vl);
+            /* Load 32 bytes as bytes (unaligned-safe) and reinterpret to u64m2. */
+            vuint64m2_t v_input = XXH_RVV_LOAD_U64X4(p);
+            if (endian != XXH_littleEndian)
+                v_input = XXH_rvswap_u64m2(v_input, vl);
 
             /* v_acc += v_input * PRIME64_2 */
-            vuint64m1_t v_mult = XXH_RVV_VMUL_VX_U64M1(v_input, PRIME64_2, vl);
-            v_acc = XXH_RVV_VADD_VV_U64M1(v_acc, v_mult, vl);
+            vuint64m2_t v_mult = XXH_RVV_VMUL_VX_U64M2(v_input, PRIME64_2, vl);
+            v_acc = XXH_RVV_VADD_VV_U64M2(v_acc, v_mult, vl);
 
             /* v_acc = rotl31(v_acc) */
-            v_acc = XXH_ROTL64(v_acc, 31, vl);
+            v_acc = XXH_ROTL64M2(v_acc, 31, vl);
 
             /* v_acc *= PRIME64_1 */
-            v_acc = XXH_RVV_VMUL_VX_U64M1(v_acc, PRIME64_1, vl);
+            v_acc = XXH_RVV_VMUL_VX_U64M2(v_acc, PRIME64_1, vl);
 
             p += 32;
         } while (p<=limit);
@@ -1012,7 +1087,7 @@ XXH64_endian_align(const void* input, size_t len, U64 seed,
         /* Store results back to scalar array */
         typedef struct { U64 v[4] __attribute__((aligned(32))); } aligned_acc64_t;
         aligned_acc64_t acc_aligned;
-        XXH_RVV_VSE64_V_U64M1(acc_aligned.v, v_acc, vl);
+        XXH_RVV_VSE64_V_U64M2(acc_aligned.v, v_acc, vl);
 
         /* Merge accumulators (same as scalar) */
         h64 = XXH_rotl64(acc_aligned.v[0], 1) + XXH_rotl64(acc_aligned.v[1], 7) +

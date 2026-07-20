@@ -41,6 +41,29 @@ WFLAGS    = -Wall -Wextra -Wundef -Wcast-qual -Wcast-align -Wshadow \
             -Wpointer-arith -Wstrict-aliasing=1
 CFLAGS    = $(WFLAGS) $(DEBUGFLAGS) $(USERCFLAGS)
 CPPFLAGS += -I$(LIBDIR) -I$(PRGDIR) -DXXH_NAMESPACE=LZ4_
+
+# RISC-V RVV support: auto-detect so fuzzer/roundTripTest exercise the RVV paths.
+# Mirror of the logic in ../lib/Makefile.
+RVV_CFLAGS :=
+IS_RISCV := $(shell $(CC) -v 2>&1 | grep -c 'Target: riscv')
+ifeq ($(IS_RISCV),1)
+  IS_CLANG := $(shell $(CC) --version 2>&1 | grep -c 'clang')
+  ifneq ($(IS_CLANG),0)
+    RVV_CFLAGS := -march=rv64gcv
+    $(info LZ4: Enabling RISC-V RVV for tests (Clang))
+  else
+    GCC_VER := $(shell $(CC) -dumpversion | cut -d. -f1)
+    ifeq ($(shell test $(GCC_VER) -ge 13; echo $$?),0)
+      RVV_CFLAGS := -march=rv64gcv
+      $(info LZ4: Enabling RISC-V RVV for tests (GCC $(GCC_VER)))
+    endif
+  endif
+endif
+ifneq ($(RVV_CFLAGS),)
+  CFLAGS   += $(RVV_CFLAGS)
+  CPPFLAGS += -DXXH_ENABLE_RVV=1
+endif
+
 ALLFLAGS  = $(CFLAGS) $(CPPFLAGS) $(LDFLAGS)
 
 include ../build/make/lz4defs.make
@@ -97,6 +120,7 @@ $(LIBDIR)/liblz4.a:
 	$(MAKE) -C $(LIBDIR) liblz4.a
 
 CLEAN += fullbench-lib
+CLEAN += xxhash_rvv_test
 fullbench-lib : DEBUGLEVEL=0
 fullbench-lib : CPPFLAGS += -DNDEBUG
 fullbench-lib: fullbench.c $(LIBDIR)/liblz4.a

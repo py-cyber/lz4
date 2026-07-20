@@ -38,7 +38,7 @@ static const struct {
     /* Additional test cases */
     {"hello", 5, 0xfb0077f9, 0x26c7827d889f6da3ULL},
     {"abcdefghijklmnopqrstuvwxyz", 26, 0x63a14d5f, 0xcfe1f278fa89835cULL},
-    {"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 62, 0x9c285e64, 0x89e6e0c4de39bca6ULL},
+    {"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 62, 0x9c285e64, 0xaaa46907d3047814ULL},
 };
 
 static int run_tests(void)

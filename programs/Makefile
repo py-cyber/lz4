@@ -53,6 +53,35 @@ USERCFLAGS:= -O3 $(CFLAGS) # -O3 can be overruled by user-provided -Ox level
 CFLAGS    = $(DEBUGFLAGS) $(USERCFLAGS)
 CPPFLAGS += -I$(LIBLZ4DIR) -DXXH_NAMESPACE=LZ4_
 
+# RISC-V RVV support: auto-detect and enable if compiler supports RVV intrinsics.
+# Mirror of the logic in ../lib/Makefile so the lz4 CLI is also RVV-optimized.
+# Enable for Clang, or GCC >= 13 with RISC-V target.
+RVV_CFLAGS :=
+IS_RISCV := $(shell $(CC) -v 2>&1 | grep -c 'Target: riscv')
+ifeq ($(IS_RISCV),1)
+  IS_CLANG := $(shell $(CC) --version 2>&1 | grep -c 'clang')
+  ifneq ($(IS_CLANG),0)
+    RVV_CFLAGS := -march=rv64gcv
+    $(info LZ4: Enabling RISC-V RVV for programs (Clang))
+  else
+    GCC_VER := $(shell $(CC) -dumpversion | cut -d. -f1)
+    ifeq ($(shell test $(GCC_VER) -ge 13; echo $$?),0)
+      RVV_CFLAGS := -march=rv64gcv
+      $(info LZ4: Enabling RISC-V RVV for programs (GCC $(GCC_VER)))
+    endif
+  endif
+endif
+ifneq ($(RVV_CFLAGS),)
+  CFLAGS   += $(RVV_CFLAGS)
+  CPPFLAGS += -DXXH_ENABLE_RVV=1
+  ifneq ($(LZ4_RVV_COUNT),)
+    CPPFLAGS += -DLZ4_RVV_COUNT=$(LZ4_RVV_COUNT)
+  endif
+  ifneq ($(LZ4_RVV_WILDCOPY8),)
+    CPPFLAGS += -DLZ4_RVV_WILDCOPY8=$(LZ4_RVV_WILDCOPY8)
+  endif
+endif
+
 include ../build/make/lz4defs.make
 
 OS_VERSION ?= $(UNAME) -r

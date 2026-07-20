@@ -50,8 +50,10 @@ CPPFLAGS+= -DXXH_NAMESPACE=LZ4_
 USERCFLAGS:= -O3 $(CFLAGS)
 
 # RISC-V RVV support: auto-detect and enable if compiler supports RVV intrinsics
-# Only enable for Clang or GCC >= 14 with RISC-V target, as cross-compilers
-# may accept -march=rv64gcv without complete intrinsic support
+# Enable for Clang, or GCC >= 13 with RISC-V target. GCC 13 has the standard
+# __riscv_-prefixed RVV intrinsics (minus the vror rotate, handled via a
+# shift-or helper). Cross-compilers that accept -march=rv64gcv without full
+# intrinsic support will fail to compile, surfacing the issue early.
 RVV_CFLAGS :=
 IS_RISCV := $(shell $(CC) -v 2>&1 | grep -c 'Target: riscv')
 ifeq ($(IS_RISCV),1)
@@ -61,7 +63,7 @@ ifeq ($(IS_RISCV),1)
     $(info LZ4: Enabling RISC-V RVV for xxHash (Clang))
   else
     GCC_VER := $(shell $(CC) -dumpversion | cut -d. -f1)
-    ifeq ($(shell test $(GCC_VER) -ge 14; echo $$?),0)
+    ifeq ($(shell test $(GCC_VER) -ge 13; echo $$?),0)
       RVV_CFLAGS := -march=rv64gcv
       $(info LZ4: Enabling RISC-V RVV for xxHash (GCC $(GCC_VER)))
     endif
