@@ -83,6 +83,8 @@ ifneq ($(RVV_CFLAGS),)
   endif
 endif
 
+CFLAGS += $(PGO_FLAGS)
+
 include ../build/make/lz4defs.make
 
 OS_VERSION ?= $(UNAME) -r

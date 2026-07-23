@@ -79,7 +79,7 @@ DEBUGFLAGS:= -Wall -Wextra -Wcast-qual -Wcast-align -Wshadow \
              -Wswitch-enum -Wdeclaration-after-statement \
              -Wstrict-prototypes -Wmissing-prototypes \
              -Wundef -Wpointer-arith -Wstrict-aliasing=1
-override CFLAGS   = $(DEBUGFLAGS) $(USERCFLAGS) $(RVV_CFLAGS)
+override CFLAGS   = $(DEBUGFLAGS) $(USERCFLAGS) $(RVV_CFLAGS) $(PGO_FLAGS)
 ALLFLAGS = $(CFLAGS) $(CPPFLAGS) $(LDFLAGS)
 
 SRCFILES := $(sort $(wildcard *.c))
