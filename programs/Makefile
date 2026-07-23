@@ -61,15 +61,16 @@ IS_RISCV := $(shell $(CC) -v 2>&1 | grep -c 'Target: riscv')
 ifeq ($(IS_RISCV),1)
   IS_CLANG := $(shell $(CC) --version 2>&1 | grep -c 'clang')
   ifneq ($(IS_CLANG),0)
-    RVV_CFLAGS := -march=rv64gcv
-    $(info LZ4: Enabling RISC-V RVV for programs (Clang))
+    RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs -mno-strict-align
+    $(info LZ4: Enabling RISC-V RVV+Zbb for programs (Clang))
   else
     GCC_VER := $(shell $(CC) -dumpversion | cut -d. -f1)
     ifeq ($(shell test $(GCC_VER) -ge 13; echo $$?),0)
-      RVV_CFLAGS := -march=rv64gcv
-      $(info LZ4: Enabling RISC-V RVV for programs (GCC $(GCC_VER)))
+      RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs -mno-strict-align
+      $(info LZ4: Enabling RISC-V RVV+Zbb for programs (GCC $(GCC_VER)))
     endif
   endif
+  RVV_CFLAGS += -mtune=spacemit-x60
 endif
 ifneq ($(RVV_CFLAGS),)
   CFLAGS   += $(RVV_CFLAGS)

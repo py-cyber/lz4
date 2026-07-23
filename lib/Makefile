@@ -59,15 +59,18 @@ IS_RISCV := $(shell $(CC) -v 2>&1 | grep -c 'Target: riscv')
 ifeq ($(IS_RISCV),1)
   IS_CLANG := $(shell $(CC) --version 2>&1 | grep -c 'clang')
   ifneq ($(IS_CLANG),0)
-    RVV_CFLAGS := -march=rv64gcv
-    $(info LZ4: Enabling RISC-V RVV for xxHash (Clang))
+    RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs -mno-strict-align
+    $(info LZ4: Enabling RISC-V RVV+Zbb for xxHash (Clang))
   else
     GCC_VER := $(shell $(CC) -dumpversion | cut -d. -f1)
     ifeq ($(shell test $(GCC_VER) -ge 13; echo $$?),0)
-      RVV_CFLAGS := -march=rv64gcv
-      $(info LZ4: Enabling RISC-V RVV for xxHash (GCC $(GCC_VER)))
+      RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs -mno-strict-align
+      $(info LZ4: Enabling RISC-V RVV+Zbb for xxHash (GCC $(GCC_VER)))
     endif
   endif
+  # SpacemiT X60 tuning (in-order, dual-issue, VLEN=128). Helps the scheduler
+  # pack the dual-issue slots and avoid pipeline stalls on dependent sequences.
+  RVV_CFLAGS += -mtune=spacemit-x60
 endif
 ifneq ($(RVV_CFLAGS),)
   CPPFLAGS += -DXXH_ENABLE_RVV=1
