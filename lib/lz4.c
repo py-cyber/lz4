@@ -2322,7 +2322,7 @@ LZ4_decompress_generic(
 
                         LZ4_memcpy(op, match, 8);
                         LZ4_memcpy(op+8, match+8, 8);
-                        LZ4_memcpy(op+16, match+16, 2);
+                        LZ4_memcpy(op+16, match+16, 8);
                         op += length;
                         continue;
             }   }   }
@@ -2422,7 +2422,7 @@ LZ4_decompress_generic(
                     /* Copy the match. */
                     LZ4_memcpy(op + 0, match + 0, 8);
                     LZ4_memcpy(op + 8, match + 8, 8);
-                    LZ4_memcpy(op +16, match +16, 2);
+                    LZ4_memcpy(op +16, match +16, 8);
                     op += length + MINMATCH;
                     /* Both stages worked, load the next token. */
                     continue;
