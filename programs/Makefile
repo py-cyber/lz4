@@ -83,8 +83,6 @@ ifneq ($(RVV_CFLAGS),)
   endif
 endif
 
-CFLAGS += $(PGO_FLAGS)
-
 include ../build/make/lz4defs.make
 
 OS_VERSION ?= $(UNAME) -r
@@ -99,6 +97,15 @@ default: lz4-release
 
 C_SRCDIRS = $(LIBLZ4DIR) .
 include ../build/make/multiconf.make
+
+# PGO_FLAGS is injected via a target-specific variable so it participates in
+# compilation and linking but NOT in the cachedObjs hash.  Without this,
+# -fprofile-generate and -fprofile-use produce different hashes => different
+# object directories => .gcda paths don't match between phases => GCC emits
+# -Wmissing-profile warnings and the profile data is silently ignored.
+ifdef PGO_FLAGS
+  $(CACHE_ROOT)/% : CFLAGS += $(PGO_FLAGS)
+endif
 
 # thread detection
 NUM_SYMBOL   := \#

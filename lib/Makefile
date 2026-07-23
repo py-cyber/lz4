@@ -79,7 +79,7 @@ DEBUGFLAGS:= -Wall -Wextra -Wcast-qual -Wcast-align -Wshadow \
              -Wswitch-enum -Wdeclaration-after-statement \
              -Wstrict-prototypes -Wmissing-prototypes \
              -Wundef -Wpointer-arith -Wstrict-aliasing=1
-override CFLAGS   = $(DEBUGFLAGS) $(USERCFLAGS) $(RVV_CFLAGS) $(PGO_FLAGS)
+override CFLAGS   = $(DEBUGFLAGS) $(USERCFLAGS) $(RVV_CFLAGS)
 ALLFLAGS = $(CFLAGS) $(CPPFLAGS) $(LDFLAGS)
 
 SRCFILES := $(sort $(wildcard *.c))
@@ -92,6 +92,15 @@ include ../build/make/lz4defs.make
 default: lib-release
 
 include ../build/make/multiconf.make
+
+# PGO_FLAGS is injected via a target-specific variable so it participates in
+# compilation and linking but NOT in the cachedObjs hash.  Without this,
+# -fprofile-generate and -fprofile-use produce different hashes => different
+# object directories => .gcda paths don't match between phases => GCC emits
+# -Wmissing-profile warnings and the profile data is silently ignored.
+ifdef PGO_FLAGS
+  $(CACHE_ROOT)/% : override CFLAGS += $(PGO_FLAGS)
+endif
 
 # OS X linker doesn't support -soname, and use different extension
 # see : https://developer.apple.com/library/mac/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html
