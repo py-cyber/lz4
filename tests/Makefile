@@ -54,9 +54,14 @@ ifeq ($(IS_RISCV),1)
   else
     GCC_VER := $(shell $(CC) -dumpversion | cut -d. -f1)
     ifeq ($(shell test $(GCC_VER) -ge 13; echo $$?),0)
-      RVV_CFLAGS := -march=rv64gcv
-      $(info LZ4: Enabling RISC-V RVV for tests (GCC $(GCC_VER)))
+      RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs -mno-strict-align
+      $(info LZ4: Enabling RISC-V RVV+Zbb for tests (GCC $(GCC_VER)))
     endif
+  endif
+  # SpacemiT X60 tuning - guard with compiler support check
+  ifeq ($(shell $(CC) -E -mtune=spacemit-x60 - </dev/null >/dev/null 2>&1; echo $$?),0)
+    RVV_CFLAGS += -mtune=spacemit-x60
+    $(info LZ4: Enabling -mtune=spacemit-x60 for tests)
   endif
 endif
 ifneq ($(RVV_CFLAGS),)

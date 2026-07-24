@@ -70,7 +70,12 @@ ifeq ($(IS_RISCV),1)
       $(info LZ4: Enabling RISC-V RVV+Zbb for programs (GCC $(GCC_VER)))
     endif
   endif
-  RVV_CFLAGS += -mtune=spacemit-x60
+  # Guard with a compiler support check: -mtune=spacemit-x60 is only available
+  # in GCC >= 16 (SpacemiT's toolchain). Standard riscv64-linux-gnu-gcc rejects it.
+  ifeq ($(shell $(CC) -E -mtune=spacemit-x60 - </dev/null >/dev/null 2>&1; echo $$?),0)
+    RVV_CFLAGS += -mtune=spacemit-x60
+    $(info LZ4: Enabling -mtune=spacemit-x60)
+  endif
 endif
 ifneq ($(RVV_CFLAGS),)
   CFLAGS   += $(RVV_CFLAGS)
