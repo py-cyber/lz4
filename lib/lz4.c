@@ -1198,9 +1198,6 @@ LZ4_FORCE_INLINE int LZ4_compress_generic_validated(
                 match = LZ4_getPositionOnHash(h, cctx->hashTable, tableType);
                 forwardH = LZ4_hashPosition(forwardIp, tableType);
                 LZ4_putPositionOnHash(ip, h, cctx->hashTable, tableType);
-#if defined(__riscv)
-                __builtin_prefetch((const char*)cctx->hashTable + forwardH * sizeof(const BYTE*), 0, 1);
-#endif
 
             } while ( (match+LZ4_DISTANCE_MAX < ip)
                    || (LZ4_read32(match) != LZ4_read32(ip)) );
@@ -1251,9 +1248,6 @@ LZ4_FORCE_INLINE int LZ4_compress_generic_validated(
                 }
                 forwardH = LZ4_hashPosition(forwardIp, tableType);
                 LZ4_putIndexOnHash(current, h, cctx->hashTable, tableType);
-#if defined(__riscv)
-                __builtin_prefetch((const char*)cctx->hashTable + forwardH * sizeof(U32), 0, 1);
-#endif
 
                 DEBUGLOG(7, "candidate at pos=%u  (offset=%u \n", matchIndex, current - matchIndex);
                 if ((dictIssue == dictSmall) && (matchIndex < prefixIdxLimit)) { continue; }    /* match outside of valid area */

@@ -255,3 +255,98 @@ test_stdvars:  ## CI helper – verifies CC/CFLAGS/CPPFLAGS/LDFLAGS/LDLIBS propa
 	@$(RM) .stdvars.log
 
 endif   # MSYS POSIX
+
+#-----------------------------------------------------------------------------
+# RISC-V cross-compilation (SpacemiT X60)
+#-----------------------------------------------------------------------------
+# Required environment variables (set before running):
+#   CC_RISCV  : cross-compiler path    (e.g. export CC_RISCV=~/x-tools/.../riscv64-unknown-linux-gnu-gcc)
+#   STRIP_RISCV : cross-strip path     (default: $(dir $(CC_RISCV))riscv64-unknown-linux-gnu-strip)
+#   BOARD     : ssh target             (e.g. export BOARD=root@192.168.1.x)
+#   BOARD_LD  : board dynamic linker   (e.g. export BOARD_LD=~/glibcrv/lib/ld-linux-riscv64-lp64d.so.1)
+#   BOARD_LIBPATH : board library path (e.g. export BOARD_LIBPATH=~/glibcrv/lib)
+#   SSHPASS   : sshpass password flag  (e.g. export SSHPASS=-p mypassword)
+# Optional:
+#   PGO_DIR   : profile data directory (default: /tmp/pgo_v2)
+
+CC_RISCV      ?=
+STRIP_RISCV   ?= $(dir $(CC_RISCV))riscv64-unknown-linux-gnu-strip
+BOARD         ?=
+BOARD_LD      ?=
+BOARD_LIBPATH ?=
+PGO_DIR       ?= /tmp/pgo_v2
+SSHPASS       ?=
+
+.PHONY: riscv-check-env
+riscv-check-env:
+	@if test -z "$(CC_RISCV)" -o -z "$(BOARD)" -o -z "$(BOARD_LD)" -o -z "$(BOARD_LIBPATH)"; then \
+	  echo "ERROR: Set CC_RISCV, BOARD, BOARD_LD, BOARD_LIBPATH first. See BUILD_RISCV.md."; \
+	  exit 1; \
+	fi
+
+.PHONY: riscv
+riscv: riscv-check-env riscv-generate riscv-train riscv-use riscv-deploy
+
+.PHONY: riscv-lib
+riscv-lib: riscv-check-env
+	$(MAKE) -C $(LZ4DIR) CC="$(CC_RISCV)"
+
+.PHONY: riscv-lz4
+riscv-lz4: riscv-check-env
+	$(MAKE) -C $(PRGDIR) CC="$(CC_RISCV)"
+
+.PHONY: riscv-pgo-clean
+riscv-pgo-clean:
+	$(RM) -r $(PGO_DIR)
+	mkdir -p $(PGO_DIR)
+
+.PHONY: riscv-generate
+riscv-generate: riscv-check-env riscv-pgo-clean
+	$(MAKE) -C $(PRGDIR) clean  > $(VOID)
+	$(MAKE) -C $(PRGDIR)        CC="$(CC_RISCV)" PGO_FLAGS="-fprofile-generate=$(PGO_DIR) -fprofile-correction"
+
+.PHONY: riscv-deploy
+riscv-deploy: riscv-check-env
+	test -f $(PRGDIR)/lz4 || { echo "Build $(PRGDIR)/lz4 first (make riscv-lz4 or riscv-generate/use)"; exit 1; }
+	$(STRIP_RISCV) $(PRGDIR)/lz4
+	sshpass $(SSHPASS) scp $(PRGDIR)/lz4 $(BOARD):/tmp/lz4
+
+.PHONY: riscv-train
+riscv-train: riscv-check-env
+	sshpass $(SSHPASS) ssh $(BOARD) ' \
+	  set -e; \
+	  mkdir -p $(PGO_DIR); \
+	  LD=$(BOARD_LD); \
+	  LP="--library-path $(BOARD_LIBPATH)"; \
+	  LZ4=/tmp/lz4; \
+	  BIN=/usr/bin; \
+	  for f in true false sh env dir ls tar cat; do \
+	    test -f "$$BIN/$$f" || continue; \
+	    $$LD $$LP $$LZ4 -1 "$$BIN/$$f" -c > /dev/null 2>/dev/null || true; \
+	    $$LD $$LP $$LZ4 -3 "$$BIN/$$f" -c > /dev/null 2>/dev/null || true; \
+	    $$LD $$LP $$LZ4 -9 "$$BIN/$$f" -c > /dev/null 2>/dev/null || true; \
+	  done; \
+	  for lvl in 1 3 9; do \
+	    $$LD $$LP $$LZ4 -$$lvl "$$BIN/true" -c > /tmp/t$$lvl.lz4 2>/dev/null; \
+	    $$LD $$LP $$LZ4 -d /tmp/t$$lvl.lz4 -c > /dev/null 2>/dev/null || true; \
+	    rm -f /tmp/t$$lvl.lz4; \
+	  done; \
+	  echo "Training done, profile files: $$(ls $(PGO_DIR)/*.gcda 2>/dev/null | wc -l)"; \
+	'
+
+.PHONY: riscv-collect
+riscv-collect: riscv-check-env
+	sshpass $(SSHPASS) rsync -a $(BOARD):$(PGO_DIR)/ $(PGO_DIR)/
+
+.PHONY: riscv-use
+riscv-use: riscv-check-env
+	$(MAKE) -C $(PRGDIR) clean  > $(VOID)
+	$(MAKE) -C $(PRGDIR)        CC="$(CC_RISCV)" PGO_FLAGS="-fprofile-use=$(PGO_DIR) -fprofile-correction"
+
+.PHONY: riscv-run
+riscv-run: riscv-check-env
+	sshpass $(SSHPASS) ssh $(BOARD) '$(BOARD_LD) --library-path $(BOARD_LIBPATH) -- /tmp/lz4 $(ARGS)'
+
+.PHONY: riscv-version
+riscv-version: riscv-check-env riscv-deploy
+	sshpass $(SSHPASS) ssh $(BOARD) '$(BOARD_LD) --library-path $(BOARD_LIBPATH) -- /tmp/lz4 --version'

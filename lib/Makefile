@@ -59,16 +59,16 @@ IS_RISCV := $(shell $(CC) -v 2>&1 | grep -c 'Target: riscv')
 ifeq ($(IS_RISCV),1)
   IS_CLANG := $(shell $(CC) --version 2>&1 | grep -c 'clang')
   ifneq ($(IS_CLANG),0)
-    RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs -mno-strict-align
-    $(info LZ4: Enabling RISC-V RVV+Zbb for xxHash (Clang))
+    RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs_zicbop -mno-strict-align
+    $(info LZ4: Enabling RISC-V RVV+Zbb+Zicbop (Clang))
   else
     GCC_VER := $(shell $(CC) -dumpversion | cut -d. -f1)
     ifeq ($(shell test $(GCC_VER) -ge 13; echo $$?),0)
-      RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs -mno-strict-align
-      $(info LZ4: Enabling RISC-V RVV+Zbb for xxHash (GCC $(GCC_VER)))
+      RVV_CFLAGS := -march=rv64gcv_zba_zbb_zbc_zbs_zicbop -mno-strict-align
+      $(info LZ4: Enabling RISC-V RVV+Zbb+Zicbop (GCC $(GCC_VER)))
     endif
   endif
-  # SpacemiT X60 tuning (in-order, dual-issue, VLEN=128). Helps the scheduler
+  # SpacemiT X60 tuning (in-order, dual-issue, VLEN=256). Helps the scheduler
   # pack the dual-issue slots and avoid pipeline stalls on dependent sequences.
   # Guard with a compiler support check: -mtune=spacemit-x60 is only available
   # in GCC >= 16 (SpacemiT's toolchain). Standard riscv64-linux-gnu-gcc rejects it.
@@ -104,7 +104,8 @@ include ../build/make/multiconf.make
 # object directories => .gcda paths don't match between phases => GCC emits
 # -Wmissing-profile warnings and the profile data is silently ignored.
 ifdef PGO_FLAGS
-  $(CACHE_ROOT)/% : override CFLAGS += $(PGO_FLAGS)
+  $(CACHE_ROOT)/%.o : override CFLAGS += $(PGO_FLAGS)
+  LDLIBS += -lgcov
 endif
 
 # OS X linker doesn't support -soname, and use different extension
