@@ -2318,13 +2318,24 @@ LZ4_decompress_generic(
                     if (offset >= 8) {
                         assert(match >= lowPrefix);
                         assert(match <= op);
-                        assert(op + 18 <= oend);
+#if defined(__riscv)
+                        assert(op + 32 <= oend);
 
                         LZ4_memcpy(op, match, 8);
                         LZ4_memcpy(op+8, match+8, 8);
                         LZ4_memcpy(op+16, match+16, 8);
+                        LZ4_memcpy(op+24, match+24, 8);
                         op += length;
                         continue;
+#else
+                        assert(op + 18 <= oend);
+
+                        LZ4_memcpy(op, match, 8);
+                        LZ4_memcpy(op+8, match+8, 8);
+                        LZ4_memcpy(op+16, match+16, 2);
+                        op += length;
+                        continue;
+#endif
             }   }   }
 
             if ( checkOffset && (unlikely(match + dictSize < lowPrefix)) ) {
@@ -2422,7 +2433,7 @@ LZ4_decompress_generic(
                     /* Copy the match. */
                     LZ4_memcpy(op + 0, match + 0, 8);
                     LZ4_memcpy(op + 8, match + 8, 8);
-                    LZ4_memcpy(op +16, match +16, 8);
+                    LZ4_memcpy(op +16, match +16, 2);
                     op += length + MINMATCH;
                     /* Both stages worked, load the next token. */
                     continue;
