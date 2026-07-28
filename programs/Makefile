@@ -110,7 +110,11 @@ ifeq ($(IS_RISCV),1)
 endif
 ifneq ($(RVV_CFLAGS),)
   CFLAGS   += $(RVV_CFLAGS)
-  CPPFLAGS += -DXXH_ENABLE_RVV=1
+  ifneq ($(LZ4_RVV_XXH),)
+    CPPFLAGS += -DXXH_ENABLE_RVV=$(LZ4_RVV_XXH)
+  else
+    CPPFLAGS += -DXXH_ENABLE_RVV=0
+  endif
   ifneq ($(LZ4_RVV_COUNT),)
     CPPFLAGS += -DLZ4_RVV_COUNT=$(LZ4_RVV_COUNT)
   endif
