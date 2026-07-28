@@ -61,7 +61,7 @@ USERCFLAGS:= -O3 $(CFLAGS)
 #                        auto = probe zbb->zbc->zbs->zicbop in order.
 #                        "_"-separated list like "zbb_zbc_zbs" to force exact set.
 #   RISCV_STRICT_ALIGN - Set to 1 to omit -mno-strict-align (default: 0)
-RISCV_MARCH ?= rv64gcv
+RISCV_MARCH ?= rv64gc
 RISCV_EXT   ?= auto
 RISCV_STRICT_ALIGN ?= 0
 RVV_CFLAGS :=
