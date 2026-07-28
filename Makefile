@@ -355,7 +355,7 @@ riscv-help:
 	@echo '  BOARD_LIBPATH=...      Board library path'
 	@echo '  SSHPASS=...            sshpass flag (e.g. -p password)'
 	@echo '  PGO_DIR=...            Profile directory (default: /tmp/pgo)'
-	@echo '  RISCV_MARCH=...        Base march (default: rv64gcv)'
+  @echo '  RISCV_MARCH=...        Base march (default: rv64gc; use rv64gcv for vector)'
 	@echo '  RISCV_EXT=...          ISA extensions (default: auto)'
 	@echo '  RISCV_STRICT_ALIGN=1   Keep strict alignment'
 	@echo '  LZ4_RVV_COUNT=...      RVV count (default: 0)'
